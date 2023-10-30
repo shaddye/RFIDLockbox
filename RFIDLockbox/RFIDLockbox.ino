@@ -1,4 +1,6 @@
-// program reading new NUID from a rfid tag.
+// program reading new NUID from a rfid tag, and establishing servo motor lock/unlock mechanism for the lockbox  
+//need to assign list of NUID's that are the only keys that can open the RFID box after scanning the keys we own already.
+
 // written in C++, this works fine as a base but we need to ensure
 //  servo motor connection works simultaenously with RFID reader FIRST AND FOREMOST
 // from there we can focus on adding the additional features like 
