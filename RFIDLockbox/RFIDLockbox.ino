@@ -1,6 +1,4 @@
-// program reading new NUID from a rfid tag, and establishing servo motor lock/unlock mechanism for the lockbox  
-//need to assign list of NUID's that are the only keys that can open the RFID box after scanning the keys we own already.
-
+// program reading new NUID from a rfid tag, accordingly locking servo motor if key is in list of known keys
 // written in C++, this works fine as a base but we need to ensure
 //  servo motor connection works simultaenously with RFID reader FIRST AND FOREMOST
 // from there we can focus on adding the additional features like 
@@ -23,6 +21,13 @@ Servo lockServo;                // creates servo object
 
 byte lastCardID[4]; // This array stores the ID of the last card read
 
+byte knownNUIDs[][4] = {
+  {0x12, 0x34, 0x56, 0x78},  // Ex NUID
+  {0x9A, 0xBC, 0xDE, 0xF0}   // Ex2 NUID
+  
+};
+
+
 void setup() {
   Serial.begin(9600);
   SPI.begin(); /// Initializes RFID reader
@@ -34,51 +39,56 @@ void setup() {
   Serial.println("Ready to scan RFID cards...");
 }
 
+
 void loop() {
   if (!rfid.PICC_IsNewCardPresent()) // checks if new card is present
     return;
 
-  if (!rfid.PICC_ReadCardSerial()) // checks if RFID sucessfully read cards NUID
+  if (!rfid.PICC_ReadCardSerial()) // checks if RFID successfully read card's NUID
     return;
 
   Serial.print("Card type: "); // displays type of card presented 
   Serial.println(rfid.PICC_GetTypeName(rfid.PICC_GetType(rfid.uid.sak)));
 
-  if (isNewCard(rfid.uid.uidByte)) { // determines whether RFID tag is unique or previously used
-    Serial.println("New card detected!");
+  if (isAuthorizedCard(rfid.uid.uidByte)) { // determines whether RFID tag is in the list of known NUIDs
+    Serial.println("Authorized card detected!");
 
-    
-    lockServo.write(UNLOCKED_POSITION); // unlock the servo (grants access to treasure)
-    delay(5000);  // motor stays retracted for 5 seconds
+    lockServo.write(UNLOCKED_POSITION); // unlock the servo (grants access)
+    delay(15000);  // motor stays retracted for 15 seconds
     lockServo.write(LOCKED_POSITION);  // locks again
-
-    for (byte i = 0; i < 4; i++) {
-      lastCardID[i] = rfid.uid.uidByte[i]; // stores last RFID card scanned as lastCardID.
-    }
 
     Serial.print("Card ID in hex: ");       // lines execute when card is scanned and its NUID is different from last card scanned.
     printInHex(rfid.uid.uidByte, rfid.uid.size);
     Serial.println();
 
-    Serial.print("Card ID in decimal: ");
+    Serial.print("Card ID in decimal: ");    // lines execute when card is scanned and its NUID is different from last card scanned.
     printInDecimal(rfid.uid.uidByte, rfid.uid.size);
     Serial.println();
   } else {
-    Serial.println("This card was read previously.");
+    Serial.println("Unauthorized card. Access denied.");
   }
 
   rfid.PICC_HaltA(); // RFID reader prepares for next card
   rfid.PCD_StopCrypto1();
 }
 
-bool isNewCard(byte *cardID) { // checks if scanned card in ID is different from previous
-  for (byte i = 0; i < 4; i++) {
-    if (cardID[i] != lastCardID[i]) {
+
+bool isAuthorizedCard(byte *cardID) {
+  for (uint8_t i = 0; i < sizeof(knownNUIDs) / sizeof(knownNUIDs[0]); i++) {
+    bool match = true;
+    for (uint8_t j = 0; j < 4; j++) {
+      if (cardID[j] != knownNUIDs[i][j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
       return true;
     }
   }
   return false;
 }
+
 
 void printInHex(byte *data, byte length) { // prints ID in hexadecimal 
   for (byte i = 0; i < length; i++) {
@@ -89,6 +99,7 @@ void printInHex(byte *data, byte length) { // prints ID in hexadecimal
     Serial.print(" ");
   }
 }
+
 
 void printInDecimal(byte *data, byte length) { // prints cards ID in decimmal
   for (byte i = 0; i < length; i++) {
