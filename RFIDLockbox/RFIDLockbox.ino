@@ -1,77 +1,80 @@
-// program reading new NUID from a rfid tag, accordingly locking servo motor if key is in list of known keys
-// written in C++, this works fine as a base but we need to ensure
-//  servo motor connection works simultaenously with RFID reader FIRST AND FOREMOST
-// from there we can focus on adding the additional features like 
-// SMS notifications, and LED displaying unlocked/locked,
-
 #include <SPI.h>
-#include <MFRC522.h> //RFID reader lib
-#include <Servo.h>  // servo motor(locking mechanism) lib
+#include <MFRC522.h>
+#include <Servo.h>
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>  // Include the LCD library
 
 #define SS_PIN 10
 #define RST_PIN 9
-#define SERVO_PIN 7  // Change this to the pin your servo is connected to
+#define SERVO_PIN 3
 
-MFRC522 rfid(SS_PIN, RST_PIN);  // create RFID object
-Servo lockServo;                // creates servo object
+MFRC522 rfid(SS_PIN, RST_PIN);
+Servo lockServo;
 
-
-#define LOCKED_POSITION 0   // // Positions for the servo motor, Aadjust as needed
-#define UNLOCKED_POSITION 90  // Adjust as needed
-
-byte lastCardID[4]; // This array stores the ID of the last card read
+#define LOCKED_POSITION 0
+#define UNLOCKED_POSITION 180
 
 byte knownNUIDs[][4] = {
-  {0x12, 0x34, 0x56, 0x78},  // Ex NUID
-  {0x9A, 0xBC, 0xDE, 0xF0}   // Ex2 NUID
-  
+  {0xC6, 0xF6, 0x0, 0x3},
+  {0x9A, 0xBC, 0xDE, 0xF0}
 };
 
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Adjusts address based on LCD's I2c address
+
+bool isLocked = true; // var to track lock state
 
 void setup() {
   Serial.begin(9600);
-  SPI.begin(); /// Initializes RFID reader
+  SPI.begin();
   rfid.PCD_Init();
 
   lockServo.attach(SERVO_PIN);
-  lockServo.write(LOCKED_POSITION);  // starts the servo motor in the locked position
+  lockServo.write(LOCKED_POSITION);
+
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Ready to scan...");
 
   Serial.println("Ready to scan RFID cards...");
 }
 
-
 void loop() {
-  if (!rfid.PICC_IsNewCardPresent()) // checks if new card is present
+  if (!rfid.PICC_IsNewCardPresent())
     return;
 
-  if (!rfid.PICC_ReadCardSerial()) // checks if RFID successfully read card's NUID
+  if (!rfid.PICC_ReadCardSerial())
     return;
 
-  Serial.print("Card type: "); // displays type of card presented 
-  Serial.println(rfid.PICC_GetTypeName(rfid.PICC_GetType(rfid.uid.sak)));
-
-  if (isAuthorizedCard(rfid.uid.uidByte)) { // determines whether RFID tag is in the list of known NUIDs
-    Serial.println("Authorized card detected!");
-
-    lockServo.write(UNLOCKED_POSITION); // unlock the servo (grants access)
-    delay(15000);  // motor stays retracted for 15 seconds
-    lockServo.write(LOCKED_POSITION);  // locks again
-
-    Serial.print("Card ID in hex: ");       // lines execute when card is scanned and its NUID is different from last card scanned.
-    printInHex(rfid.uid.uidByte, rfid.uid.size);
-    Serial.println();
-
-    Serial.print("Card ID in decimal: ");    // lines execute when card is scanned and its NUID is different from last card scanned.
-    printInDecimal(rfid.uid.uidByte, rfid.uid.size);
-    Serial.println();
+  if (isAuthorizedCard(rfid.uid.uidByte)) {
+    if (isLocked) {
+      Serial.println("Authorized card detected! Unlocking...");
+      lockServo.write(UNLOCKED_POSITION);
+      lcd.clear();
+      lcd.print("Unlocked");
+      isLocked = false;
+    } else {
+      Serial.println("Locking again...");
+      lockServo.write(LOCKED_POSITION);
+      isLocked = true;
+      lcd.clear();
+      lcd.print("Locked");
+      delay(1000); 
+      lcd.clear();
+      lcd.print("Ready to scan...");
+    }
   } else {
-    Serial.println("Unauthorized card. Access denied.");
+    Serial.println("Warning: unauthorized card detected.");
+    lcd.clear();
+    lcd.print("Unauthorized");
+    delay(2000); 
+    lcd.clear();
+    lcd.print(isLocked ? "Ready to scan..." : "Unlocked");
   }
 
-  rfid.PICC_HaltA(); // RFID reader prepares for next card
+  rfid.PICC_HaltA();
   rfid.PCD_StopCrypto1();
 }
-
 
 bool isAuthorizedCard(byte *cardID) {
   for (uint8_t i = 0; i < sizeof(knownNUIDs) / sizeof(knownNUIDs[0]); i++) {
@@ -89,8 +92,7 @@ bool isAuthorizedCard(byte *cardID) {
   return false;
 }
 
-
-void printInHex(byte *data, byte length) { // prints ID in hexadecimal 
+void printInHex(byte *data, byte length) {
   for (byte i = 0; i < length; i++) {
     if (data[i] < 0x10) {
       Serial.print("0");
@@ -100,8 +102,7 @@ void printInHex(byte *data, byte length) { // prints ID in hexadecimal
   }
 }
 
-
-void printInDecimal(byte *data, byte length) { // prints cards ID in decimmal
+void printInDecimal(byte *data, byte length) {
   for (byte i = 0; i < length; i++) {
     Serial.print(data[i]);
     Serial.print(" ");
